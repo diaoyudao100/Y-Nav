@@ -1,8 +1,7 @@
 
 import { Category, LinkItem, WebDavConfig, SearchConfig, AIConfig } from "../types";
 
-// Helper to call our Cloudflare Proxy
-// This solves the CORS issue by delegating the request to the backend
+// Helper to call our WebDAV proxy (solves CORS by delegating requests)
 const callWebDavProxy = async (operation: 'check' | 'upload' | 'download', config: WebDavConfig, payload?: any, filename?: string) => {
     try {
         const response = await fetch('/api/webdav', {

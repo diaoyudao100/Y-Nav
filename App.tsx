@@ -1,16 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  Search, Plus, Upload, Moon, Sun, Menu, 
-  Trash2, Edit2, Loader2, Cloud, CheckCircle2, AlertCircle, Monitor,
-  Pin, Settings, Lock, CloudCog, Github, GitFork, GripVertical, Save, CheckSquare, LogOut, ExternalLink,
-  ChevronLeft, ChevronRight
-} from 'lucide-react';
 import {
-  DndContext,
   DragEndEvent,
-  closestCenter,
-  closestCorners,
   PointerSensor,
   useSensor,
   useSensors,
@@ -18,36 +9,33 @@ import {
 } from '@dnd-kit/core';
 import {
   arrayMove,
-  SortableContext,
   sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  rectSortingStrategy,
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { LinkItem, Category, DEFAULT_CATEGORIES, INITIAL_LINKS, WebDavConfig, AIConfig, SearchMode, ExternalSearchSource, SearchConfig } from './types';
 import { parseBookmarks } from './services/bookmarkParser';
-import Icon from './components/Icon';
 import LinkModal from './components/LinkModal';
-import AuthModal from './components/AuthModal';
 import CategoryManagerModal from './components/CategoryManagerModal';
 import BackupModal from './components/BackupModal';
-import CategoryAuthModal from './components/CategoryAuthModal';
 import ImportModal from './components/ImportModal';
 import SettingsModal from './components/SettingsModal';
 import SearchConfigModal from './components/SearchConfigModal';
 import ContextMenu from './components/ContextMenu';
 import QRCodeModal from './components/QRCodeModal';
+import Sidebar from './components/Sidebar';
+import MainHeader from './components/MainHeader';
+import LinkSections from './components/LinkSections';
 
 // --- 配置项 ---
 // 项目核心仓库地址
 const GITHUB_REPO_URL = 'https://github.com/aabacada/CloudNav-abcd';
 
 const LOCAL_STORAGE_KEY = 'cloudnav_data_cache';
-const AUTH_KEY = 'cloudnav_auth_token';
 const WEBDAV_CONFIG_KEY = 'cloudnav_webdav_config';
 const AI_CONFIG_KEY = 'cloudnav_ai_config';
 const SEARCH_CONFIG_KEY = 'cloudnav_search_config';
+const FAVICON_CACHE_KEY = 'cloudnav_favicon_cache';
 
 type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -66,10 +54,6 @@ function App() {
   // Search Mode State
   const [searchMode, setSearchMode] = useState<SearchMode>('external');
   const [externalSearchSources, setExternalSearchSources] = useState<ExternalSearchSource[]>([]);
-  const [isLoadingSearchConfig, setIsLoadingSearchConfig] = useState(true);
-  
-  // Category Security State
-  const [unlockedCategoryIds, setUnlockedCategoryIds] = useState<Set<string>>(new Set());
 
   // WebDAV Config State
   const [webDavConfig, setWebDavConfig] = useState<WebDavConfig>({
@@ -107,36 +91,22 @@ function App() {
           title: 'CloudNav - 我的导航',
           navTitle: 'CloudNav',
           favicon: '',
-          cardStyle: 'detailed' as const,
-          passwordExpiryDays: 7
+          cardStyle: 'detailed' as const
       };
   });
   
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCatManagerOpen, setIsCatManagerOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isSearchConfigModalOpen, setIsSearchConfigModalOpen] = useState(false);
-  const [catAuthModalData, setCatAuthModalData] = useState<Category | null>(null);
   
   const [editingLink, setEditingLink] = useState<LinkItem | undefined>(undefined);
   // State for data pre-filled from Bookmarklet
   const [prefillLink, setPrefillLink] = useState<Partial<LinkItem> | undefined>(undefined);
   
-  // Sync State
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [authToken, setAuthToken] = useState<string>('');
-  const [requiresAuth, setRequiresAuth] = useState<boolean | null>(null); // null表示未检查，true表示需要认证，false表示不需要
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-
-  const isLocalDev = useMemo(() => {
-    if (typeof window === 'undefined') return false;
-    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  }, []);
-  const shouldVerifyCategoryAction = !isLocalDev && requiresAuth !== false;
   const navTitleText = siteSettings.navTitle || 'CloudNav';
   const navTitleShort = navTitleText.slice(0, 2);
   
@@ -172,19 +142,6 @@ function App() {
 
   // Mobile Search State
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
-  
-  // Category Action Auth State
-  const [categoryActionAuth, setCategoryActionAuth] = useState<{
-    isOpen: boolean;
-    action: 'edit' | 'delete';
-    categoryId: string;
-    categoryName: string;
-  }>({
-    isOpen: false,
-    action: 'edit',
-    categoryId: '',
-    categoryName: ''
-  });
   
   // --- Helpers & Sync Logic ---
 
@@ -226,56 +183,16 @@ function App() {
         
         setLinks(loadedLinks);
         setCategories(loadedCategories);
+        return { links: loadedLinks, categories: loadedCategories };
       } catch (e) {
         setLinks(INITIAL_LINKS);
         setCategories(DEFAULT_CATEGORIES);
+        return { links: INITIAL_LINKS, categories: DEFAULT_CATEGORIES };
       }
     } else {
       setLinks(INITIAL_LINKS);
       setCategories(DEFAULT_CATEGORIES);
-    }
-  };
-
-  const syncToCloud = async (newLinks: LinkItem[], newCategories: Category[], token: string) => {
-    setSyncStatus('saving');
-    try {
-        const response = await fetch('/api/storage', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-auth-password': token
-            },
-            body: JSON.stringify({ links: newLinks, categories: newCategories })
-        });
-
-        if (response.status === 401) {
-            // 检查是否是密码过期
-            try {
-                const errorData = await response.json();
-                if (errorData.error && errorData.error.includes('过期')) {
-                    alert('您的密码已过期，请重新登录');
-                }
-            } catch (e) {
-                // 如果无法解析错误信息，使用默认提示
-                console.error('Failed to parse error response', e);
-            }
-            
-            setAuthToken('');
-            localStorage.removeItem(AUTH_KEY);
-            setIsAuthOpen(true);
-            setSyncStatus('error');
-            return false;
-        }
-
-        if (!response.ok) throw new Error('Network response was not ok');
-        
-        setSyncStatus('saved');
-        setTimeout(() => setSyncStatus('idle'), 2000);
-        return true;
-    } catch (error) {
-        console.error("Sync failed", error);
-        setSyncStatus('error');
-        return false;
+      return { links: INITIAL_LINKS, categories: DEFAULT_CATEGORIES };
     }
   };
 
@@ -286,11 +203,6 @@ function App() {
       
       // 2. Save to Local Cache
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links: newLinks, categories: newCategories }));
-
-      // 3. Sync to Cloud (if authenticated)
-      if (authToken && !isLocalDev) {
-          syncToCloud(newLinks, newCategories, authToken);
-      }
   };
 
   // --- Context Menu Functions ---
@@ -386,87 +298,124 @@ function App() {
     closeContextMenu();
   };
 
-  // 加载链接图标缓存
-  const loadLinkIcons = async (linksToLoad: LinkItem[]) => {
-    if (!authToken || isLocalDev) return; // 只有在已登录且非本地开发状态下才加载图标缓存
-    
-    const updatedLinks = [...linksToLoad];
-    const domainsToFetch: string[] = [];
-    
-    // 收集所有链接的域名（包括已有图标的链接）
-    for (const link of updatedLinks) {
-      if (link.url) {
-        try {
-          let domain = link.url;
-          if (!link.url.startsWith('http://') && !link.url.startsWith('https://')) {
-            domain = 'https://' + link.url;
-          }
-          
-          if (domain.startsWith('http://') || domain.startsWith('https://')) {
-            const urlObj = new URL(domain);
-            domain = urlObj.hostname;
-            domainsToFetch.push(domain);
-          }
-        } catch (e) {
-          console.error("Failed to parse URL for icon loading", e);
+  // 加载本地图标缓存
+  const loadLinkIcons = (linksToLoad: LinkItem[]) => {
+    let cache: Record<string, string> = {};
+    try {
+      const stored = localStorage.getItem(FAVICON_CACHE_KEY);
+      cache = stored ? JSON.parse(stored) : {};
+    } catch (e) {
+      cache = {};
+    }
+
+    if (!cache || Object.keys(cache).length === 0) return;
+
+    const updatedLinks = linksToLoad.map(link => {
+      if (!link.url) return link;
+      try {
+        let domain = link.url;
+        if (!link.url.startsWith('http://') && !link.url.startsWith('https://')) {
+          domain = 'https://' + link.url;
         }
+        const urlObj = new URL(domain);
+        const cachedIcon = cache[urlObj.hostname];
+        if (!cachedIcon) return link;
+        if (!link.icon || link.icon.includes('faviconextractor.com') || !cachedIcon.includes('faviconextractor.com')) {
+          return { ...link, icon: cachedIcon };
+        }
+      } catch (e) {
+        return link;
       }
-    }
-    
-    // 批量获取图标
-    if (domainsToFetch.length > 0) {
-      const iconPromises = domainsToFetch.map(async (domain) => {
-        try {
-          const response = await fetch(`/api/storage?getConfig=favicon&domain=${encodeURIComponent(domain)}`);
-          if (response.ok) {
-            const data = await response.json();
-            if (data.cached && data.icon) {
-              return { domain, icon: data.icon };
-            }
-          }
-        } catch (error) {
-          console.log(`Failed to fetch cached icon for ${domain}`, error);
-        }
-        return null;
-      });
-      
-      const iconResults = await Promise.all(iconPromises);
-      
-      // 更新链接的图标
-      iconResults.forEach(result => {
-        if (result) {
-          const linkToUpdate = updatedLinks.find(link => {
-            if (!link.url) return false;
-            try {
-              let domain = link.url;
-              if (!link.url.startsWith('http://') && !link.url.startsWith('https://')) {
-                domain = 'https://' + link.url;
-              }
-              
-              if (domain.startsWith('http://') || domain.startsWith('https://')) {
-                const urlObj = new URL(domain);
-                return urlObj.hostname === result.domain;
-              }
-            } catch (e) {
-              return false;
-            }
-            return false;
-          });
-          
-          if (linkToUpdate) {
-            // 只有当链接没有图标，或者当前图标是faviconextractor.com生成的，或者缓存中的图标是自定义图标时才更新
-            if (!linkToUpdate.icon || 
-                linkToUpdate.icon.includes('faviconextractor.com') || 
-                !result.icon.includes('faviconextractor.com')) {
-              linkToUpdate.icon = result.icon;
-            }
-          }
-        }
-      });
-      
-      // 更新状态
-      setLinks(updatedLinks);
-    }
+      return link;
+    });
+
+    setLinks(updatedLinks);
+  };
+
+  const buildDefaultSearchSources = (): ExternalSearchSource[] => {
+    const now = Date.now();
+    return [
+      {
+        id: 'bing',
+        name: '必应',
+        url: 'https://www.bing.com/search?q={query}',
+        icon: 'Search',
+        enabled: true,
+        createdAt: now
+      },
+      {
+        id: 'google',
+        name: 'Google',
+        url: 'https://www.google.com/search?q={query}',
+        icon: 'Search',
+        enabled: true,
+        createdAt: now
+      },
+      {
+        id: 'baidu',
+        name: '百度',
+        url: 'https://www.baidu.com/s?wd={query}',
+        icon: 'Globe',
+        enabled: true,
+        createdAt: now
+      },
+      {
+        id: 'sogou',
+        name: '搜狗',
+        url: 'https://www.sogou.com/web?query={query}',
+        icon: 'Globe',
+        enabled: true,
+        createdAt: now
+      },
+      {
+        id: 'yandex',
+        name: 'Yandex',
+        url: 'https://yandex.com/search/?text={query}',
+        icon: 'Globe',
+        enabled: true,
+        createdAt: now
+      },
+      {
+        id: 'github',
+        name: 'GitHub',
+        url: 'https://github.com/search?q={query}',
+        icon: 'Github',
+        enabled: true,
+        createdAt: now
+      },
+      {
+        id: 'linuxdo',
+        name: 'Linux.do',
+        url: 'https://linux.do/search?q={query}',
+        icon: 'Terminal',
+        enabled: true,
+        createdAt: now
+      },
+      {
+        id: 'bilibili',
+        name: 'B站',
+        url: 'https://search.bilibili.com/all?keyword={query}',
+        icon: 'Play',
+        enabled: true,
+        createdAt: now
+      },
+      {
+        id: 'youtube',
+        name: 'YouTube',
+        url: 'https://www.youtube.com/results?search_query={query}',
+        icon: 'Video',
+        enabled: true,
+        createdAt: now
+      },
+      {
+        id: 'wikipedia',
+        name: '维基',
+        url: 'https://zh.wikipedia.org/wiki/Special:Search?search={query}',
+        icon: 'BookOpen',
+        enabled: true,
+        createdAt: now
+      }
+    ];
   };
 
   const applyThemeMode = (mode: ThemeMode) => {
@@ -494,35 +443,9 @@ function App() {
     const storedTheme = localStorage.getItem('theme');
     const initialMode: ThemeMode = storedTheme === 'dark' || storedTheme === 'light' || storedTheme === 'system'
       ? storedTheme
-      : 'system';
+      : 'dark';
     setThemeMode(initialMode);
     applyThemeMode(initialMode);
-
-    // Load Token and check expiry
-    const savedToken = localStorage.getItem(AUTH_KEY);
-    const lastLoginTime = localStorage.getItem('lastLoginTime');
-    
-    if (savedToken) {
-      const currentTime = Date.now();
-      
-      if (lastLoginTime) {
-        const lastLogin = parseInt(lastLoginTime);
-        const timeDiff = currentTime - lastLogin;
-        
-        const expiryDays = siteSettings.passwordExpiryDays || 7;
-        const expiryTimeMs = expiryDays > 0 ? expiryDays * 24 * 60 * 60 * 1000 : 0;
-        
-        if (expiryTimeMs > 0 && timeDiff > expiryTimeMs) {
-          localStorage.removeItem(AUTH_KEY);
-          localStorage.removeItem('lastLoginTime');
-          setAuthToken(null);
-        } else {
-          setAuthToken(savedToken);
-        }
-      } else {
-        setAuthToken(savedToken);
-      }
-    }
 
     // Load WebDAV Config
     const savedWebDav = localStorage.getItem(WEBDAV_CONFIG_KEY);
@@ -530,6 +453,26 @@ function App() {
         try {
             setWebDavConfig(JSON.parse(savedWebDav));
         } catch (e) {}
+    }
+
+    // Load Search Config
+    const savedSearchConfig = localStorage.getItem(SEARCH_CONFIG_KEY);
+    if (savedSearchConfig) {
+      try {
+        const parsed = JSON.parse(savedSearchConfig) as SearchConfig;
+        if (parsed?.mode) {
+          setSearchMode(parsed.mode);
+          setExternalSearchSources(parsed.externalSources || []);
+          if (parsed.selectedSource) {
+            setSelectedSearchSource(parsed.selectedSource);
+          }
+        }
+      } catch (e) {}
+    } else {
+      const defaultSources = buildDefaultSearchSources();
+      setSearchMode('external');
+      setExternalSearchSources(defaultSources);
+      setSelectedSearchSource(defaultSources[0] || null);
     }
 
     // Handle URL Params for Bookmarklet (Add Link)
@@ -549,211 +492,10 @@ function App() {
         setIsModalOpen(true);
     }
 
-    // Initial Data Fetch
-    const initData = async () => {
-        // 检测是否为本地开发环境
-        if (isLocalDev) {
-          // 本地开发模式:跳过服务器检查,直接加载本地数据
-          console.log('🔧 本地开发模式:跳过服务器检查');
-          setRequiresAuth(false); // 本地开发不需要强制认证
-          setIsCheckingAuth(false);
-
-          // 如果有本地token,自动"登录"
-          if (savedToken) {
-            setAuthToken(savedToken);
-            setSyncStatus('offline');
-          }
-
-          // 加载本地数据
-          loadFromLocal();
-          return;
-        }
-
-        // 生产环境:正常的服务器检查流程
-        // 首先检查是否需要认证
-        try {
-            const authRes = await fetch('/api/storage?checkAuth=true');
-            if (authRes.ok) {
-                const authData = await authRes.json();
-                setRequiresAuth(authData.requiresAuth);
-
-                // 如果需要认证但用户未登录，则不获取数据
-                if (authData.requiresAuth && !savedToken) {
-                    setIsCheckingAuth(false);
-                    setIsAuthOpen(true);
-                    return;
-                }
-            }
-        } catch (e) {
-            console.warn("Failed to check auth requirement.", e);
-        }
-        
-        // 获取数据
-        let hasCloudData = false;
-        try {
-            const res = await fetch('/api/storage', {
-                headers: authToken ? { 'x-auth-password': authToken } : {}
-            });
-            if (res.ok) {
-                const data = await res.json();
-                if (data.links && data.links.length > 0) {
-                    setLinks(data.links);
-                    setCategories(data.categories || DEFAULT_CATEGORIES);
-                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-                    
-                    // 加载链接图标缓存
-                    loadLinkIcons(data.links);
-                    hasCloudData = true;
-                }
-            } else if (res.status === 401) {
-                // 如果返回401，可能是密码过期，清除本地token并要求重新登录
-                const errorData = await res.json();
-                if (errorData.error && errorData.error.includes('过期')) {
-                    setAuthToken(null);
-                    localStorage.removeItem(AUTH_KEY);
-                    setIsAuthOpen(true);
-                    setIsCheckingAuth(false);
-                    return;
-                }
-            }
-        } catch (e) {
-            console.warn("Failed to fetch from cloud, falling back to local.", e);
-        }
-        
-        // 无论是否有云端数据，都尝试从KV空间加载搜索配置和网站配置
-        try {
-            const searchConfigRes = await fetch('/api/storage?getConfig=search');
-            if (searchConfigRes.ok) {
-                const searchConfigData = await searchConfigRes.json();
-                // 检查搜索配置是否有效（包含必要的字段）
-                if (searchConfigData && (searchConfigData.mode || searchConfigData.externalSources || searchConfigData.selectedSource)) {
-                    setSearchMode(searchConfigData.mode || 'external');
-                    setExternalSearchSources(searchConfigData.externalSources || []);
-                    // 加载已保存的选中搜索源
-                    if (searchConfigData.selectedSource) {
-                        setSelectedSearchSource(searchConfigData.selectedSource);
-                    }
-                }
-            }
-            
-            // 获取网站配置（包括密码过期时间设置）
-            const websiteConfigRes = await fetch('/api/storage?getConfig=website');
-            if (websiteConfigRes.ok) {
-                const websiteConfigData = await websiteConfigRes.json();
-                if (websiteConfigData) {
-                    setSiteSettings(prev => ({
-                        ...prev,
-                        title: websiteConfigData.title || prev.title,
-                        navTitle: websiteConfigData.navTitle || prev.navTitle,
-                        favicon: websiteConfigData.favicon || prev.favicon,
-                        cardStyle: websiteConfigData.cardStyle || prev.cardStyle,
-                        passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays
-                    }));
-                }
-            }
-        } catch (e) {
-            console.warn("Failed to fetch configs from KV.", e);
-        }
-        
-        // 如果有云端数据，则不需要加载本地数据
-        if (hasCloudData) {
-            setIsCheckingAuth(false);
-            return;
-        }
-        
-        // 如果没有云端数据，则加载本地数据
-        loadFromLocal();
-        
-        // 如果从KV空间加载搜索配置失败，直接使用默认配置（不使用localStorage回退）
-        setSearchMode('external');
-        setExternalSearchSources([
-            {
-                id: 'bing',
-                name: '必应',
-                url: 'https://www.bing.com/search?q={query}',
-                icon: 'Search',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'google',
-                name: 'Google',
-                url: 'https://www.google.com/search?q={query}',
-                icon: 'Search',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'baidu',
-                name: '百度',
-                url: 'https://www.baidu.com/s?wd={query}',
-                icon: 'Globe',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'sogou',
-                name: '搜狗',
-                url: 'https://www.sogou.com/web?query={query}',
-                icon: 'Globe',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'yandex',
-                name: 'Yandex',
-                url: 'https://yandex.com/search/?text={query}',
-                icon: 'Globe',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'github',
-                name: 'GitHub',
-                url: 'https://github.com/search?q={query}',
-                icon: 'Github',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'linuxdo',
-                name: 'Linux.do',
-                url: 'https://linux.do/search?q={query}',
-                icon: 'Terminal',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'bilibili',
-                name: 'B站',
-                url: 'https://search.bilibili.com/all?keyword={query}',
-                icon: 'Play',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'youtube',
-                name: 'YouTube',
-                url: 'https://www.youtube.com/results?search_query={query}',
-                icon: 'Video',
-                enabled: true,
-                createdAt: Date.now()
-            },
-            {
-                id: 'wikipedia',
-                name: '维基',
-                url: 'https://zh.wikipedia.org/wiki/Special:Search?search={query}',
-                icon: 'BookOpen',
-                enabled: true,
-                createdAt: Date.now()
-            }
-        ]);
-        
-        setIsLoadingSearchConfig(false);
-        setIsCheckingAuth(false);
-    };
-
-    initData();
+    const localData = loadFromLocal();
+    if (localData) {
+      loadLinkIcons(localData.links);
+    }
   }, []);
 
   useEffect(() => {
@@ -834,8 +576,6 @@ function App() {
   };
 
   const handleBatchDelete = () => {
-    if (!authToken) { setIsAuthOpen(true); return; }
-    
     if (selectedLinks.size === 0) {
       alert('请先选择要删除的链接');
       return;
@@ -850,8 +590,6 @@ function App() {
   };
 
   const handleBatchMove = (targetCategoryId: string) => {
-    if (!authToken) { setIsAuthOpen(true); return; }
-    
     if (selectedLinks.size === 0) {
       alert('请先选择要移动的链接');
       return;
@@ -879,187 +617,6 @@ function App() {
   };
 
   // --- Actions ---
-
-  const handleLogin = async (password: string): Promise<boolean> => {
-      try {
-        // 本地开发模式:跳过服务器验证,直接使用本地存储
-        if (isLocalDev) {
-          console.log('🔧 本地开发模式:跳过服务器认证');
-          setAuthToken(password);
-          localStorage.setItem(AUTH_KEY, password);
-          setIsAuthOpen(false);
-          setSyncStatus('offline'); // 设置为离线状态
-          localStorage.setItem('lastLoginTime', Date.now().toString());
-
-          // 加载本地数据
-          loadFromLocal();
-
-          alert('本地开发模式已启用\n数据仅保存在浏览器 LocalStorage');
-          return true;
-        }
-
-        // 生产环境:正常的服务器验证流程
-        // 首先验证密码
-        const authResponse = await fetch('/api/storage', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-auth-password': password
-            },
-            body: JSON.stringify({ authOnly: true }) // 只用于验证密码，不更新数据
-        });
-
-        if (authResponse.ok) {
-            setAuthToken(password);
-            localStorage.setItem(AUTH_KEY, password);
-            setIsAuthOpen(false);
-            setSyncStatus('saved');
-            
-            // 登录成功后，获取网站配置（包括密码过期时间设置）
-            try {
-                const websiteConfigRes = await fetch('/api/storage?getConfig=website');
-                if (websiteConfigRes.ok) {
-                    const websiteConfigData = await websiteConfigRes.json();
-                    if (websiteConfigData) {
-                        setSiteSettings(prev => ({
-                            ...prev,
-                            title: websiteConfigData.title || prev.title,
-                            navTitle: websiteConfigData.navTitle || prev.navTitle,
-                            favicon: websiteConfigData.favicon || prev.favicon,
-                            cardStyle: websiteConfigData.cardStyle || prev.cardStyle,
-                            passwordExpiryDays: websiteConfigData.passwordExpiryDays !== undefined ? websiteConfigData.passwordExpiryDays : prev.passwordExpiryDays
-                        }));
-                    }
-                }
-            } catch (e) {
-                console.warn("Failed to fetch website config after login.", e);
-            }
-            
-            // 检查密码是否过期
-            const lastLoginTime = localStorage.getItem('lastLoginTime');
-            const currentTime = Date.now();
-            
-            if (lastLoginTime) {
-                const lastLogin = parseInt(lastLoginTime);
-                const timeDiff = currentTime - lastLogin;
-                
-                const expiryTimeMs = (siteSettings.passwordExpiryDays || 7) > 0 ? (siteSettings.passwordExpiryDays || 7) * 24 * 60 * 60 * 1000 : 0;
-                
-                if (expiryTimeMs > 0 && timeDiff > expiryTimeMs) {
-                    setAuthToken(null);
-                    localStorage.removeItem(AUTH_KEY);
-                    setIsAuthOpen(true);
-                    alert('您的密码已过期，请重新登录');
-                    return false;
-                }
-            }
-            
-            localStorage.setItem('lastLoginTime', currentTime.toString());
-            
-            // 登录成功后，从服务器获取数据
-            try {
-                const res = await fetch('/api/storage');
-                if (res.ok) {
-                    const data = await res.json();
-                    // 如果服务器有数据，使用服务器数据
-                    if (data.links && data.links.length > 0) {
-                        setLinks(data.links);
-                        setCategories(data.categories || DEFAULT_CATEGORIES);
-                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-                        
-                        // 加载链接图标缓存
-                        loadLinkIcons(data.links);
-                    } else {
-                        // 如果服务器没有数据，使用本地数据
-                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ links, categories }));
-                        // 并将本地数据同步到服务器
-                        syncToCloud(links, categories, password);
-                        
-                        // 加载链接图标缓存
-                        loadLinkIcons(links);
-                    }
-                } 
-            } catch (e) {
-                console.warn("Failed to fetch data after login.", e);
-                loadFromLocal();
-                // 尝试将本地数据同步到服务器
-                syncToCloud(links, categories, password);
-            }
-            
-            // 登录成功后，从KV空间加载AI配置
-            try {
-                const aiConfigRes = await fetch('/api/storage?getConfig=ai');
-                if (aiConfigRes.ok) {
-                    const aiConfigData = await aiConfigRes.json();
-                    if (aiConfigData && Object.keys(aiConfigData).length > 0) {
-                        setAiConfig(aiConfigData);
-                        localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(aiConfigData));
-                    }
-                }
-            } catch (e) {
-                console.warn("Failed to fetch AI config after login.", e);
-            }
-            
-            return true;
-        }
-        return false;
-      } catch (e) {
-          return false;
-      }
-  };
-
-  const handleLogout = () => {
-      setAuthToken(null);
-      localStorage.removeItem(AUTH_KEY);
-      setSyncStatus('offline');
-      // 退出后重新加载本地数据
-      loadFromLocal();
-  };
-
-  // 分类操作密码验证处理函数
-  const handleCategoryActionAuth = async (password: string): Promise<boolean> => {
-    if (isLocalDev) {
-      return true;
-    }
-
-    try {
-      // 验证密码
-      const authResponse = await fetch('/api/storage', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-auth-password': password
-        },
-        body: JSON.stringify({ authOnly: true })
-      });
-      
-      return authResponse.ok;
-    } catch (error) {
-      console.error('Category action auth error:', error);
-      return false;
-    }
-  };
-
-  // 打开分类操作验证弹窗
-  const openCategoryActionAuth = (action: 'edit' | 'delete', categoryId: string, categoryName: string) => {
-    setCategoryActionAuth({
-      isOpen: true,
-      action,
-      categoryId,
-      categoryName
-    });
-  };
-
-  // 关闭分类操作验证弹窗
-  const closeCategoryActionAuth = () => {
-    setCategoryActionAuth({
-      isOpen: false,
-      action: 'edit',
-      categoryId: '',
-      categoryName: ''
-    });
-  };
-
   const handleImportConfirm = (newLinks: LinkItem[], newCategories: Category[]) => {
       // Merge categories: Avoid duplicate names/IDs
       const mergedCategories = [...categories];
@@ -1082,8 +639,6 @@ function App() {
   };
 
   const handleAddLink = (data: Omit<LinkItem, 'id' | 'createdAt'>) => {
-    if (!authToken) { setIsAuthOpen(true); return; }
-    
     // 处理URL，确保有协议前缀
     let processedUrl = data.url;
     if (processedUrl && !processedUrl.startsWith('http://') && !processedUrl.startsWith('https://')) {
@@ -1143,7 +698,6 @@ function App() {
   };
 
   const handleEditLink = (data: Omit<LinkItem, 'id' | 'createdAt'>) => {
-    if (!authToken) { setIsAuthOpen(true); return; }
     if (!editingLink) return;
     
     // 处理URL，确保有协议前缀
@@ -1288,7 +842,6 @@ function App() {
   );
 
   const handleDeleteLink = (id: string) => {
-    if (!authToken) { setIsAuthOpen(true); return; }
     if (confirm('确定删除此链接吗?')) {
       updateData(links.filter(l => l.id !== id), categories);
     }
@@ -1297,7 +850,6 @@ function App() {
   const togglePin = (id: string, e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      if (!authToken) { setIsAuthOpen(true); return; }
       
       const linkToToggle = links.find(l => l.id === id);
       if (!linkToToggle) return;
@@ -1327,106 +879,25 @@ function App() {
           setSiteSettings(newSiteSettings);
           localStorage.setItem('cloudnav_site_settings', JSON.stringify(newSiteSettings));
       }
-      
-      if (authToken) {
-          try {
-              const response = await fetch('/api/storage', {
-                  method: 'POST',
-                  headers: {
-                      'Content-Type': 'application/json',
-                      'x-auth-password': authToken
-                  },
-                  body: JSON.stringify({
-                      saveConfig: 'ai',
-                      config: config
-                  })
-              });
-              
-              if (!response.ok) {
-                  console.error('Failed to save AI config to KV:', response.statusText);
-              }
-          } catch (error) {
-              console.error('Error saving AI config to KV:', error);
-          }
-          
-          if (newSiteSettings) {
-              try {
-                  const response = await fetch('/api/storage', {
-                      method: 'POST',
-                      headers: {
-                          'Content-Type': 'application/json',
-                          'x-auth-password': authToken
-                      },
-                      body: JSON.stringify({
-                          saveConfig: 'website',
-                          config: newSiteSettings
-                      })
-                  });
-                  
-                  if (!response.ok) {
-                      console.error('Failed to save website config to KV:', response.statusText);
-                  }
-              } catch (error) {
-                  console.error('Error saving website config to KV:', error);
-              }
-          }
-      }
   };
 
   const handleRestoreAIConfig = async (config: AIConfig) => {
       setAiConfig(config);
       localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
-      
-      // 同时保存到KV空间
-      if (authToken) {
-          try {
-              const response = await fetch('/api/storage', {
-                  method: 'POST',
-                  headers: {
-                      'Content-Type': 'application/json',
-                      'x-auth-password': authToken
-                  },
-                  body: JSON.stringify({
-                      saveConfig: 'ai',
-                      config: config
-                  })
-              });
-              
-              if (!response.ok) {
-                  console.error('Failed to restore AI config to KV:', response.statusText);
-              }
-          } catch (error) {
-              console.error('Error restoring AI config to KV:', error);
-          }
-      }
   };
 
-  // --- Category Management & Security ---
+  // --- Category Management ---
 
   const handleCategoryClick = (cat: Category) => {
-      // If category has password and is NOT unlocked
-      if (cat.password && !unlockedCategoryIds.has(cat.id)) {
-          setCatAuthModalData(cat);
-          setSidebarOpen(false);
-          return;
-      }
       setSelectedCategory(cat.id);
       setSidebarOpen(false);
   };
 
-  const handleUnlockCategory = (catId: string) => {
-      setUnlockedCategoryIds(prev => new Set(prev).add(catId));
-      setSelectedCategory(catId);
-  };
-
   const handleUpdateCategories = (newCats: Category[]) => {
-      if (!authToken) { setIsAuthOpen(true); return; }
       updateData(links, newCats);
   };
 
   const handleDeleteCategory = (catId: string) => {
-      if (!authToken) { setIsAuthOpen(true); return; }
-      
       // 防止删除"常用推荐"分类
       if (catId === 'common') {
           alert('"常用推荐"分类不能被删除');
@@ -1497,7 +968,7 @@ function App() {
     // 更新选中的搜索源
     setSelectedSearchSource(source);
     
-    // 保存选中的搜索源到KV空间
+    // 保存选中的搜索源到本地
     await handleSaveSearchConfig(externalSearchSources, searchMode, source);
     
     if (searchQuery.trim()) {
@@ -1521,33 +992,7 @@ function App() {
       if (selectedSource !== undefined) {
           setSelectedSearchSource(selectedSource);
       }
-      
-      // 只保存到KV空间（搜索配置允许无密码访问）
-      try {
-          const headers: Record<string, string> = {
-              'Content-Type': 'application/json'
-          };
-          
-          // 如果有认证令牌，添加认证头
-          if (authToken) {
-              headers['x-auth-password'] = authToken;
-          }
-          
-          const response = await fetch('/api/storage', {
-              method: 'POST',
-              headers: headers,
-              body: JSON.stringify({
-                  saveConfig: 'search',
-                  config: searchConfig
-              })
-          });
-          
-          if (!response.ok) {
-              console.error('Failed to save search config to KV:', response.statusText);
-          }
-      } catch (error) {
-          console.error('Error saving search config to KV:', error);
-      }
+      localStorage.setItem(SEARCH_CONFIG_KEY, JSON.stringify(searchConfig));
   };
 
   const handleSearchModeChange = (mode: SearchMode) => {
@@ -1555,91 +1000,8 @@ function App() {
       
       // 如果切换到外部搜索模式且搜索源列表为空，自动加载默认搜索源
       if (mode === 'external' && externalSearchSources.length === 0) {
-          const defaultSources: ExternalSearchSource[] = [
-              {
-                  id: 'bing',
-                  name: '必应',
-                  url: 'https://www.bing.com/search?q={query}',
-                  icon: 'Search',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'google',
-                  name: 'Google',
-                  url: 'https://www.google.com/search?q={query}',
-                  icon: 'Search',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'baidu',
-                  name: '百度',
-                  url: 'https://www.baidu.com/s?wd={query}',
-                  icon: 'Globe',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'sogou',
-                  name: '搜狗',
-                  url: 'https://www.sogou.com/web?query={query}',
-                  icon: 'Globe',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'yandex',
-                  name: 'Yandex',
-                  url: 'https://yandex.com/search/?text={query}',
-                  icon: 'Globe',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'github',
-                  name: 'GitHub',
-                  url: 'https://github.com/search?q={query}',
-                  icon: 'Github',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'linuxdo',
-                  name: 'Linux.do',
-                  url: 'https://linux.do/search?q={query}',
-                  icon: 'Terminal',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'bilibili',
-                  name: 'B站',
-                  url: 'https://search.bilibili.com/all?keyword={query}',
-                  icon: 'Play',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'youtube',
-                  name: 'YouTube',
-                  url: 'https://www.youtube.com/results?search_query={query}',
-                  icon: 'Video',
-                  enabled: true,
-                  createdAt: Date.now()
-              },
-              {
-                  id: 'wikipedia',
-                  name: '维基',
-                  url: 'https://zh.wikipedia.org/wiki/Special:Search?search={query}',
-                  icon: 'BookOpen',
-                  enabled: true,
-                  createdAt: Date.now()
-              }
-          ];
-          
-          // 保存默认搜索源到状态和KV空间
-          handleSaveSearchConfig(defaultSources, mode);
+          const defaultSources = buildDefaultSearchSources();
+          handleSaveSearchConfig(defaultSources, mode, defaultSources[0]);
       } else {
           handleSaveSearchConfig(externalSearchSources, mode);
       }
@@ -1649,91 +1011,8 @@ function App() {
       if (searchQuery.trim() && searchMode === 'external') {
           // 如果搜索源列表为空，自动加载默认搜索源
           if (externalSearchSources.length === 0) {
-              const defaultSources: ExternalSearchSource[] = [
-                  {
-                      id: 'bing',
-                      name: '必应',
-                      url: 'https://www.bing.com/search?q={query}',
-                      icon: 'Search',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'google',
-                      name: 'Google',
-                      url: 'https://www.google.com/search?q={query}',
-                      icon: 'Search',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'baidu',
-                      name: '百度',
-                      url: 'https://www.baidu.com/s?wd={query}',
-                      icon: 'Globe',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'sogou',
-                      name: '搜狗',
-                      url: 'https://www.sogou.com/web?query={query}',
-                      icon: 'Globe',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'yandex',
-                      name: 'Yandex',
-                      url: 'https://yandex.com/search/?text={query}',
-                      icon: 'Globe',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'github',
-                      name: 'GitHub',
-                      url: 'https://github.com/search?q={query}',
-                      icon: 'Github',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'linuxdo',
-                      name: 'Linux.do',
-                      url: 'https://linux.do/search?q={query}',
-                      icon: 'Terminal',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'bilibili',
-                      name: 'B站',
-                      url: 'https://search.bilibili.com/all?keyword={query}',
-                      icon: 'Play',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'youtube',
-                      name: 'YouTube',
-                      url: 'https://www.youtube.com/results?search_query={query}',
-                      icon: 'Video',
-                      enabled: true,
-                      createdAt: Date.now()
-                  },
-                  {
-                      id: 'wikipedia',
-                      name: '维基',
-                      url: 'https://zh.wikipedia.org/wiki/Special:Search?search={query}',
-                      icon: 'BookOpen',
-                      enabled: true,
-                      createdAt: Date.now()
-                  }
-              ];
-              
-              // 保存默认搜索源到状态和KV空间
-              handleSaveSearchConfig(defaultSources, 'external');
+              const defaultSources = buildDefaultSearchSources();
+              handleSaveSearchConfig(defaultSources, 'external', defaultSources[0]);
               
               // 使用第一个默认搜索源立即执行搜索
               const searchUrl = defaultSources[0].url.replace('{query}', encodeURIComponent(searchQuery));
@@ -1768,17 +1047,8 @@ function App() {
 
   // --- Filtering & Memo ---
 
-  // Helper to check if a category is "Locked" (Has password AND not unlocked)
-  const isCategoryLocked = (catId: string) => {
-      const cat = categories.find(c => c.id === catId);
-      if (!cat || !cat.password) return false;
-      return !unlockedCategoryIds.has(catId);
-  };
-
   const pinnedLinks = useMemo(() => {
-      // Don't show pinned links if they belong to a locked category
-      const filteredPinnedLinks = links.filter(l => l.pinned && !isCategoryLocked(l.categoryId));
-      // 按照pinnedOrder字段排序，如果没有pinnedOrder字段则按创建时间排序
+      const filteredPinnedLinks = links.filter(l => l.pinned);
       return filteredPinnedLinks.sort((a, b) => {
         // 如果有pinnedOrder字段，则使用pinnedOrder排序
         if (a.pinnedOrder !== undefined && b.pinnedOrder !== undefined) {
@@ -1790,13 +1060,10 @@ function App() {
         // 如果都没有pinnedOrder字段，则按创建时间排序
         return a.createdAt - b.createdAt;
       });
-  }, [links, categories, unlockedCategoryIds]);
+  }, [links]);
 
   const displayedLinks = useMemo(() => {
     let result = links;
-    
-    // Security Filter: Always hide links from locked categories
-    result = result.filter(l => !isCategoryLocked(l.categoryId));
 
     // Search Filter
     if (searchQuery.trim()) {
@@ -1822,7 +1089,7 @@ function App() {
       // 改为升序排序，这样order值小(旧卡片)的排在前面，order值大(新卡片)的排在后面
       return aOrder - bOrder;
     });
-  }, [links, selectedCategory, searchQuery, categories, unlockedCategoryIds]);
+  }, [links, selectedCategory, searchQuery]);
 
 
   // --- Render Components ---
@@ -1855,7 +1122,7 @@ function App() {
         className={`group relative transition-all duration-200 cursor-grab active:cursor-grabbing min-w-0 max-w-full overflow-hidden hover:shadow-lg hover:shadow-green-100/50 dark:hover:shadow-green-900/20 ${
           isSortingMode || isSortingPinned
             ? 'bg-green-20 dark:bg-green-900/30 border-green-200 dark:border-green-800' 
-            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
+            : 'bg-white/80 dark:bg-slate-900/70 border-slate-200/70 dark:border-white/10'
         } ${isDragging ? 'shadow-2xl scale-105' : ''} ${
           isDetailedView 
             ? 'flex flex-col rounded-2xl border shadow-sm p-4 min-h-[100px] hover:border-green-400 dark:hover:border-green-500' 
@@ -1910,7 +1177,7 @@ function App() {
         className={`group relative transition-all duration-200 hover:shadow-lg hover:shadow-blue-100/50 dark:hover:shadow-blue-900/20 ${
           isSelected 
             ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800' 
-            : 'bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 border-slate-200 dark:border-slate-700'
+            : 'bg-white/80 dark:bg-slate-900/70 hover:bg-blue-50/60 dark:hover:bg-blue-900/20 border-slate-200/70 dark:border-white/10'
         } ${isBatchEditMode ? 'cursor-pointer' : ''} ${
           isDetailedView 
             ? 'flex flex-col rounded-2xl border shadow-sm p-4 min-h-[100px] hover:border-blue-400 dark:hover:border-blue-500' 
@@ -2011,45 +1278,12 @@ function App() {
 
   return (
     <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
-      {/* 认证遮罩层 - 当需要认证时显示 */}
-      {requiresAuth && !authToken && (
-        <div className="fixed inset-0 z-50 bg-white dark:bg-slate-900 flex items-center justify-center">
-          <div className="w-full max-w-md p-6">
-            <div className="text-center mb-8">
-              <div className="mx-auto w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-4">
-                <Lock className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-              </div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50 mb-2">
-                需要身份验证
-              </h1>
-              <p className="text-slate-600 dark:text-slate-400">
-                此导航页面设置了访问密码，请输入密码以继续访问
-              </p>
-            </div>
-            <AuthModal isOpen={true} onLogin={handleLogin} />
-          </div>
-        </div>
-      )}
-      
-      {/* 主要内容 - 只有在不需要认证或已认证时显示 */}
-      {(!requiresAuth || authToken) && (
-        <>
-          <AuthModal isOpen={isAuthOpen} onLogin={handleLogin} />
-      
-      <CategoryAuthModal 
-        isOpen={!!catAuthModalData}
-        category={catAuthModalData}
-        onClose={() => setCatAuthModalData(null)}
-        onUnlock={handleUnlockCategory}
-      />
-
       <CategoryManagerModal 
         isOpen={isCatManagerOpen} 
         onClose={() => setIsCatManagerOpen(false)}
         categories={categories}
         onUpdateCategories={handleUpdateCategories}
         onDeleteCategory={handleDeleteCategory}
-        onVerifyPassword={shouldVerifyCategoryAction ? handleCategoryActionAuth : undefined}
       />
 
       <BackupModal
@@ -2083,9 +1317,7 @@ function App() {
         siteSettings={siteSettings}
         onSave={handleSaveAIConfig}
         links={links}
-        categories={categories}
         onUpdateLinks={(newLinks) => updateData(newLinks, categories)}
-        authToken={authToken}
       />
 
       <SearchConfigModal
@@ -2094,7 +1326,6 @@ function App() {
         sources={externalSearchSources}
         onSave={(sources) => handleSaveSearchConfig(sources, searchMode)}
       />
-
       {/* Sidebar Mobile Overlay */}
       {sidebarOpen && (
         <div 
@@ -2103,658 +1334,150 @@ function App() {
         />
       )}
 
-      {/* Sidebar */}
-      <aside 
-        className={`
-          fixed lg:static inset-y-0 left-0 z-30 ${sidebarWidthClass} transform transition-all duration-300 ease-in-out
-          bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        `}
-      >
-        {/* Logo */}
-        <div className={`h-16 flex items-center border-b border-slate-100 dark:border-slate-700 shrink-0 relative ${isSidebarCollapsed ? 'justify-center px-2' : 'px-6'}`}>
-            <span className={`text-xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent ${isSidebarCollapsed ? 'text-base px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700' : ''}`}>
-              {isSidebarCollapsed ? navTitleShort : navTitleText}
-            </span>
-            <button
-              onClick={(e) => { e.stopPropagation(); setIsSidebarCollapsed(prev => !prev); }}
-              className="hidden lg:inline-flex absolute right-2 p-1.5 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
-              title={isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
-              aria-label={isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
-            >
-              {isSidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-            </button>
-        </div>
-
-        {/* Categories List */}
-        <div className={`flex-1 overflow-y-auto space-y-1 scrollbar-hide ${isSidebarCollapsed ? 'px-2 py-4' : 'p-4'}`}>
-            <button
-              onClick={() => { setSelectedCategory('all'); setSidebarOpen(false); }}
-              title="置顶网站"
-              className={`rounded-xl transition-all ${isSidebarCollapsed ? 'w-full flex items-center justify-center px-2 py-3' : 'w-full flex items-center gap-3 px-4 py-3'} ${
-                selectedCategory === 'all' 
-                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' 
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
-            >
-              <div className={`${isSidebarCollapsed ? 'p-2.5 rounded-xl' : 'p-1'} ${selectedCategory === 'all' ? 'bg-blue-100 dark:bg-blue-800' : 'bg-slate-100 dark:bg-slate-800'} flex items-center justify-center`}>
-                <Icon name="LayoutGrid" size={18} />
-              </div>
-              {!isSidebarCollapsed && <span>置顶网站</span>}
-            </button>
-            
-            <div className={`flex items-center pt-4 pb-2 ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-between px-4'}`}>
-               {!isSidebarCollapsed && (
-                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                   分类目录
-                 </span>
-               )}
-               <button 
-                  onClick={() => { if(!authToken) setIsAuthOpen(true); else setIsCatManagerOpen(true); }}
-                  className="p-1 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
-                  title="管理分类"
-               >
-                  <Settings size={14} />
-               </button>
-            </div>
-
-            {categories.map(cat => {
-                const isLocked = cat.password && !unlockedCategoryIds.has(cat.id);
-                const categoryBaseClasses = isSidebarCollapsed
-                  ? 'w-full flex items-center justify-center gap-0 px-2.5 py-2.5'
-                  : 'w-full flex items-center gap-3 px-4 py-2.5';
-                const selectedClasses = selectedCategory === cat.id
-                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700';
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => handleCategoryClick(cat)}
-                    title={isSidebarCollapsed ? cat.name : undefined}
-                    className={`rounded-xl transition-all group ${categoryBaseClasses} ${selectedClasses}`}
-                  >
-                    <div className={`${isSidebarCollapsed ? 'p-2.5 rounded-xl' : 'p-1.5 rounded-lg'} transition-colors flex items-center justify-center ${selectedCategory === cat.id ? 'bg-blue-100 dark:bg-blue-800' : 'bg-slate-100 dark:bg-slate-800'}`}>
-                      {isLocked ? <Lock size={16} className="text-amber-500" /> : <Icon name={cat.icon} size={16} />}
-                    </div>
-                    {!isSidebarCollapsed && (
-                      <span className="truncate flex-1 text-left">{cat.name}</span>
-                    )}
-                    {!isSidebarCollapsed && selectedCategory === cat.id && (
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-                    )}
-                  </button>
-                );
-            })}
-        </div>
-
-        {/* Footer Actions */}
-        {!isSidebarCollapsed && (
-          <div className="p-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
-            
-            <div className="grid grid-cols-3 gap-2 mb-2">
-                <button 
-                    onClick={() => { if(!authToken) setIsAuthOpen(true); else setIsImportModalOpen(true); }}
-                    className="flex flex-col items-center justify-center gap-1 p-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
-                    title="导入书签"
-                >
-                    <Upload size={14} />
-                    <span>导入</span>
-                </button>
-                
-                <button 
-                    onClick={() => { if(!authToken) setIsAuthOpen(true); else setIsBackupModalOpen(true); }}
-                    className="flex flex-col items-center justify-center gap-1 p-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
-                    title="备份与恢复"
-                >
-                    <CloudCog size={14} />
-                    <span>备份</span>
-                </button>
-
-                <button 
-                    onClick={() => setIsSettingsModalOpen(true)}
-                    className="flex flex-col items-center justify-center gap-1 p-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
-                    title="AI 设置"
-                >
-                    <Settings size={14} />
-                    <span>设置</span>
-                </button>
-            </div>
-            
-            <div className="flex items-center justify-between text-xs px-2 mt-2">
-               <div className="flex items-center gap-1 text-slate-400">
-                 {syncStatus === 'saving' && <Loader2 className="animate-spin w-3 h-3 text-blue-500" />}
-                 {syncStatus === 'saved' && <CheckCircle2 className="w-3 h-3 text-green-500" />}
-                 {syncStatus === 'error' && <AlertCircle className="w-3 h-3 text-red-500" />}
-                 {authToken ? <span className="text-green-600">已同步</span> : <span className="text-amber-500">离线</span>}
-               </div>
-
-               <a 
-                 href={GITHUB_REPO_URL} 
-                 target="_blank" 
-                 rel="noopener noreferrer"
-                 className="flex items-center gap-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
-                 title="Fork this project on GitHub"
-               >
-                 <GitFork size={14} />
-                 <span>Fork 项目 v1.7</span>
-               </a>
-            </div>
-          </div>
-        )}
-      </aside>
+      <Sidebar
+        sidebarOpen={sidebarOpen}
+        sidebarWidthClass={sidebarWidthClass}
+        isSidebarCollapsed={isSidebarCollapsed}
+        navTitleText={navTitleText}
+        navTitleShort={navTitleShort}
+        selectedCategory={selectedCategory}
+        categories={categories}
+        repoUrl={GITHUB_REPO_URL}
+        onSelectAll={() => {
+          setSelectedCategory('all');
+          setSidebarOpen(false);
+        }}
+        onSelectCategory={(cat) => {
+          handleCategoryClick(cat);
+          setSidebarOpen(false);
+        }}
+        onToggleCollapsed={() => setIsSidebarCollapsed((prev) => !prev)}
+        onOpenCategoryManager={() => setIsCatManagerOpen(true)}
+        onOpenImport={() => setIsImportModalOpen(true)}
+        onOpenBackup={() => setIsBackupModalOpen(true)}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+      />
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full bg-slate-50 dark:bg-slate-900 overflow-hidden relative">
-        
-        {/* Header */}
-        <header className="h-16 px-4 lg:px-8 flex items-center justify-between bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10 shrink-0">
-          <div className="flex items-center gap-4 flex-1">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300">
-              <Menu size={24} />
-            </button>
+      <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-slate-50 dark:bg-slate-950">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900"></div>
+          <div
+            className="absolute inset-0 opacity-0 dark:opacity-70"
+            style={{
+              backgroundImage:
+                'radial-gradient(1px 1px at 24px 24px, rgba(148,163,184,0.25) 1px, transparent 0), radial-gradient(1px 1px at 96px 96px, rgba(148,163,184,0.18) 1px, transparent 0)',
+              backgroundSize: '120px 120px, 200px 200px'
+            }}
+          />
+          <div
+            className="absolute inset-0 opacity-0 dark:opacity-70"
+            style={{
+              backgroundImage:
+                'radial-gradient(600px 320px at 70% -10%, rgba(56,189,248,0.18), transparent 70%), radial-gradient(500px 280px at 15% 20%, rgba(14,165,233,0.16), transparent 60%)'
+            }}
+          />
+        </div>
 
-            {/* 搜索模式切换 + 搜索框 */}
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              {/* 移动端搜索图标 - 仅在手机端显示，平板端隐藏 */}
-              <button 
-                onClick={() => {
-                  setIsMobileSearchOpen(!isMobileSearchOpen);
-                  // 手机端点击搜索图标时默认使用站外搜索
-                  if (searchMode !== 'external') {
-                    handleSearchModeChange('external');
-                  }
-                }}
-                className="sm:flex md:hidden lg:hidden p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"
-                title="搜索"
-              >
-                <Search size={20} />
-              </button>
+        <div className="relative z-10 flex flex-col h-full">
+          <MainHeader
+            navTitleText={navTitleText}
+            siteCardStyle={siteSettings.cardStyle}
+            themeMode={themeMode}
+            darkMode={darkMode}
+            isMobileSearchOpen={isMobileSearchOpen}
+            searchMode={searchMode}
+            searchQuery={searchQuery}
+            externalSearchSources={externalSearchSources}
+            hoveredSearchSource={hoveredSearchSource}
+            selectedSearchSource={selectedSearchSource}
+            showSearchSourcePopup={showSearchSourcePopup}
+            onOpenSidebar={() => setSidebarOpen(true)}
+            onToggleTheme={toggleTheme}
+            onViewModeChange={handleViewModeChange}
+            onAddLink={() => { setEditingLink(undefined); setIsModalOpen(true); }}
+            onSearchModeChange={handleSearchModeChange}
+            onOpenSearchConfig={() => setIsSearchConfigModalOpen(true)}
+            onSearchQueryChange={setSearchQuery}
+            onExternalSearch={handleExternalSearch}
+            onSearchSourceSelect={handleSearchSourceSelect}
+            onHoverSearchSource={setHoveredSearchSource}
+            onIconHoverChange={setIsIconHovered}
+            onPopupHoverChange={setIsPopupHovered}
+            onToggleMobileSearch={() => {
+              setIsMobileSearchOpen(!isMobileSearchOpen);
+              if (searchMode !== 'external') {
+                handleSearchModeChange('external');
+              }
+            }}
+            onToggleSearchSourcePopup={() => setShowSearchSourcePopup((prev) => !prev)}
+            linksCount={links.length}
+            categoriesCount={categories.length}
+            pinnedCount={pinnedLinks.length}
+          />
 
-              {/* 搜索模式切换 - 平板端和桌面端显示，手机端隐藏 */}
-              <div className="hidden sm:hidden md:flex lg:flex items-center gap-2 flex-shrink-0">
-                <div className="flex items-center bg-slate-100 dark:bg-slate-700 rounded-full p-1">
-                  <button
-                    onClick={() => handleSearchModeChange('internal')}
-                    className={`px-3 py-1 text-xs font-medium rounded-full transition-all flex items-center justify-center min-h-[24px] min-w-[40px] ${
-                      searchMode === 'internal'
-                        ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100'
-                    }`}
-                    title="站内搜索"
-                  >
-                    站内
-                  </button>
-                  <button
-                    onClick={() => handleSearchModeChange('external')}
-                    className={`px-3 py-1 text-xs font-medium rounded-full transition-all flex items-center justify-center min-h-[24px] min-w-[40px] ${
-                      searchMode === 'external'
-                        ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100'
-                    }`}
-                    title="站外搜索"
-                  >
-                    站外
-                  </button>
-                </div>
-                
-                {/* 搜索配置管理按钮 */}
-                {searchMode === 'external' && (
-                  <button
-                    onClick={() => setIsSearchConfigModalOpen(true)}
-                    className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"
-                    title="管理搜索源"
-                  >
-                    <Settings size={14} />
-                  </button>
-                )}
-              </div>
-
-              {/* 搜索框 */}
-              <div className={`relative w-full max-w-lg ${isMobileSearchOpen ? 'block' : 'hidden'} sm:block`}>
-                {/* 搜索源选择弹出窗口 */}
-                {searchMode === 'external' && showSearchSourcePopup && (
-                  <div 
-                    className="absolute left-0 top-full mt-2 w-full bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 p-3 z-50"
-                    onMouseEnter={() => setIsPopupHovered(true)}
-                    onMouseLeave={() => setIsPopupHovered(false)}
-                  >
-                    <div className="grid grid-cols-5 sm:grid-cols-5 gap-2">
-                      {externalSearchSources
-                        .filter(source => source.enabled)
-                        .map((source, index) => (
-                          <button
-                            key={index}
-                            onClick={() => handleSearchSourceSelect(source)}
-                            onMouseEnter={() => setHoveredSearchSource(source)}
-                            onMouseLeave={() => setHoveredSearchSource(null)}
-                            className="px-2 py-2 text-sm rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 flex items-center gap-1 justify-center"
-                          >
-                            <img 
-                              src={`https://www.faviconextractor.com/favicon/${new URL(source.url).hostname}?larger=true`}
-                              alt={source.name}
-                              className="w-4 h-4"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGNsYXNzPSJsdWNpZGUgbHVjaWRlLXNlYXJjaCI+PHBhdGggZD0ibTIxIDIxLTQuMzQtNC4zNCI+PC9wYXRoPjxjaXJjbGUgY3g9IjExIiBjeT0iMTEiIHI9IjgiPjwvY2lyY2xlPjwvc3ZnPg==';
-                              }}
-                            />
-                            <span className="truncate hidden sm:inline">{source.name}</span>
-                          </button>
-                        ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* 搜索图标 */}
-                <div 
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer"
-                  onMouseEnter={() => searchMode === 'external' && setIsIconHovered(true)}
-                  onMouseLeave={() => setIsIconHovered(false)}
-                  onClick={() => {
-                    // 移动端点击事件：显示搜索源选择窗口
-                    if (searchMode === 'external') {
-                      setShowSearchSourcePopup(!showSearchSourcePopup);
-                    }
-                  }}
-                >
-                  {searchMode === 'internal' ? (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search">
-                      <path d="m21 21-4.35-4.35"></path>
-                      <circle cx="11" cy="11" r="8"></circle>
-                    </svg>
-                  ) : (hoveredSearchSource || selectedSearchSource) ? (
-                    <img 
-                      src={`https://www.faviconextractor.com/favicon/${new URL((hoveredSearchSource || selectedSearchSource).url).hostname}?larger=true`}
-                      alt={(hoveredSearchSource || selectedSearchSource).name}
-                      className="w-4 h-4"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGNsYXNzPSJsdWNpZGUgbHVjaWRlLXNlYXJjaCI+PHBhdGggZD0ibTIxIDIxLTQuMzQtNC4zNCI+PC9wYXRoPjxjaXJjbGUgY3g9IjExIiBjeT0iMTEiIHI9IjgiPjwvY2lyY2xlPjwvc3ZnPg==';
-                      }}
-                    />
-                  ) : (
-                    <Search size={16} />
-                  )}
-                </div>
-                
-                <input
-                  type="text"
-                  placeholder={
-                    searchMode === 'internal' 
-                      ? "搜索站内内容..." 
-                      : selectedSearchSource 
-                        ? `在${selectedSearchSource.name}搜索内容` 
-                        : "搜索站外内容..."
-                  }
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && searchMode === 'external') {
-                      handleExternalSearch();
-                    }
-                  }}
-                  className="w-full pl-9 pr-4 py-2 rounded-full bg-slate-100 dark:bg-slate-700/50 border-none text-sm focus:ring-2 focus:ring-blue-500 dark:text-white placeholder-slate-400 outline-none transition-all"
-                  // 移动端优化：防止页面缩放
-                  style={{ fontSize: '16px' }}
-                  inputMode="search"
-                  enterKeyHint="search"
-                />
-                
-                {searchMode === 'external' && searchQuery.trim() && (
-                  <button
-                    onClick={handleExternalSearch}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-blue-500"
-                    title="执行站外搜索"
-                  >
-                    <ExternalLink size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* 视图切换控制器 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
-            <div className={`${isMobileSearchOpen ? 'hidden' : 'flex'} lg:flex items-center bg-slate-100 dark:bg-slate-700 rounded-full p-1`}>
-              <button
-                onClick={() => handleViewModeChange('simple')}
-                className={`px-3 py-1 text-xs font-medium rounded-full transition-all ${
-                  siteSettings.cardStyle === 'simple'
-                    ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100'
-                }`}
-                title="简约版视图"
-              >
-                简约
-              </button>
-              <button
-                onClick={() => handleViewModeChange('detailed')}
-                className={`px-3 py-1 text-xs font-medium rounded-full transition-all ${
-                  siteSettings.cardStyle === 'detailed'
-                    ? 'bg-white dark:bg-slate-600 text-blue-600 dark:text-blue-400 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100'
-                }`}
-                title="详情版视图"
-              >
-                详情
-              </button>
-            </div>
-
-            {/* 主题切换按钮 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
-            <button
-              onClick={toggleTheme}
-              title={themeMode === 'system' ? '主题: 跟随系统' : darkMode ? '主题: 暗色' : '主题: 亮色'}
-              className={`${isMobileSearchOpen ? 'hidden' : 'flex'} lg:flex p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700`}
-            >
-              {themeMode === 'system' ? <Monitor size={18} /> : darkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-
-            {/* 登录/退出按钮 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
-            <div className={`${isMobileSearchOpen ? 'hidden' : 'flex'}`}>
-              {!authToken ? (
-                  <button onClick={() => setIsAuthOpen(true)} className="flex items-center gap-2 bg-slate-200 dark:bg-slate-700 px-3 py-1.5 rounded-full text-xs font-medium">
-                      <Cloud size={14} /> <span className="hidden sm:inline">登录</span>
-                  </button>
-              ) : (
-                  <button onClick={handleLogout} className="flex items-center gap-2 bg-slate-200 dark:bg-slate-700 px-3 py-1.5 rounded-full text-xs font-medium">
-                      <LogOut size={14} /> <span className="hidden sm:inline">退出</span>
-                  </button>
-              )}
-            </div>
-
-            {/* 添加按钮 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
-            <div className={`${isMobileSearchOpen ? 'hidden' : 'flex'}`}>
-              <button
-                onClick={() => { if(!authToken) setIsAuthOpen(true); else { setEditingLink(undefined); setIsModalOpen(true); }}}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-full text-sm font-medium shadow-lg shadow-blue-500/30"
-              >
-                <Plus size={16} /> <span className="hidden sm:inline">添加</span>
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* Content Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-8">
-            
-            {/* 1. Pinned Area (Custom Top Area) */}
-            {pinnedLinks.length > 0 && !searchQuery && (selectedCategory === 'all') && (
-                <section>
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-2">
-                            <Pin size={16} className="text-blue-500 fill-blue-500" />
-                            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                                置顶 / 常用
-                            </h2>
-                            <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded-full">
-                                {pinnedLinks.length}
-                            </span>
-                        </div>
-                        {isSortingPinned ? (
-                            <div className="flex gap-2">
-                                <button 
-                                    onClick={savePinnedSorting}
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-full transition-colors"
-                                    title="保存顺序"
-                                >
-                                    <Save size={14} />
-                                    <span>保存顺序</span>
-                                </button>
-                                <button 
-                                    onClick={cancelPinnedSorting}
-                                    className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium rounded-full hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
-                                    title="取消排序"
-                                >
-                                    取消
-                                </button>
-                            </div>
-                        ) : (
-                            <button 
-                                onClick={() => setIsSortingPinned(true)}
-                                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-full transition-colors"
-                                title="排序"
-                            >
-                                <GripVertical size={14} />
-                                <span>排序</span>
-                            </button>
-                        )}
-                    </div>
-                    {isSortingPinned ? (
-                        <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCorners}
-                            onDragEnd={handlePinnedDragEnd}
-                        >
-                            <SortableContext
-                                items={pinnedLinks.map(link => link.id)}
-                                strategy={rectSortingStrategy}
-                            >
-                                <div className={`grid gap-3 ${
-                                  siteSettings.cardStyle === 'detailed' 
-                                    ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                                    : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                                }`}>
-                                    {pinnedLinks.map(link => (
-                                        <SortableLinkCard key={link.id} link={link} />
-                                    ))}
-                                </div>
-                            </SortableContext>
-                        </DndContext>
-                    ) : (
-                        <div className={`grid gap-3 ${
-                          siteSettings.cardStyle === 'detailed' 
-                            ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                            : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                        }`}>
-                            {pinnedLinks.map(link => renderLinkCard(link))}
-                        </div>
-                    )}
-                </section>
-            )}
-
-            {/* 2. Main Grid */}
-            {(selectedCategory !== 'all' || searchQuery) && (
-            <section>
-                 {(!pinnedLinks.length && !searchQuery && selectedCategory === 'all') && (
-                    <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg flex items-center justify-between">
-                         <div>
-                            <h1 className="text-xl font-bold">早安 👋</h1>
-                            <p className="text-sm opacity-90 mt-1">
-                                {links.length} 个链接 · {categories.length} 个分类
-                            </p>
-                         </div>
-                         <Icon name="Compass" size={48} className="opacity-20" />
-                    </div>
-                 )}
-
-                 <div className="flex items-center justify-between mb-4">
-                     <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                         {selectedCategory === 'all' 
-                            ? (searchQuery ? '搜索结果' : '所有链接') 
-                            : (
-                                <>
-                                    {categories.find(c => c.id === selectedCategory)?.name}
-                                    {isCategoryLocked(selectedCategory) && <Lock size={14} className="text-amber-500" />}
-                                    <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded-full">
-                                        {displayedLinks.length}
-                                    </span>
-                                </>
-                            )
-                         }
-                     </h2>
-                     {selectedCategory !== 'all' && !isCategoryLocked(selectedCategory) && (
-                         isSortingMode === selectedCategory ? (
-                             <div className="flex gap-2">
-                                 <button 
-                                     onClick={saveSorting}
-                                     className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-full transition-colors"
-                                     title="保存顺序"
-                                 >
-                                     <Save size={14} />
-                                     <span>保存顺序</span>
-                                 </button>
-                                 <button 
-                                     onClick={cancelSorting}
-                                     className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs font-medium rounded-full hover:bg-slate-300 dark:hover:bg-slate-600 transition-all"
-                                     title="取消排序"
-                                 >
-                                     取消
-                                 </button>
-                             </div>
-                         ) : (
-                             <div className="flex gap-2">
-                                 <button 
-                                     onClick={toggleBatchEditMode}
-                                     className={`flex items-center gap-1 px-3 py-1.5 text-white text-xs font-medium rounded-full transition-colors ${
-                                         isBatchEditMode 
-                                             ? 'bg-red-600 hover:bg-red-700' 
-                                             : 'bg-blue-600 hover:bg-blue-700'
-                                     }`}
-                                     title={isBatchEditMode ? "退出批量编辑" : "批量编辑"}
-                                 >
-                                     {isBatchEditMode ? '取消' : '批量编辑'}
-                                 </button>
-                                 {isBatchEditMode ? (
-                                     <>
-                                         <button 
-                                             onClick={handleBatchDelete}
-                                             className="flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-full transition-colors"
-                                             title="批量删除"
-                                         >
-                                             <Trash2 size={14} />
-                                             <span>批量删除</span>
-                                         </button>
-                                         <button 
-                                             onClick={handleSelectAll}
-                                             className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-full transition-colors"
-                                             title="全选/取消全选"
-                                         >
-                                             <CheckSquare size={14} />
-                                             <span>{selectedLinks.size === displayedLinks.length ? '取消全选' : '全选'}</span>
-                                         </button>
-                                         <div className="relative group">
-                                              <button 
-                                                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-full transition-colors"
-                                                  title="批量移动"
-                                              >
-                                                  <Upload size={14} />
-                                                  <span>批量移动</span>
-                                              </button>
-                                              <div className="absolute top-full right-0 mt-1 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-20 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
-                                                  {categories.filter(cat => cat.id !== selectedCategory).map(cat => (
-                                                      <button
-                                                          key={cat.id}
-                                                          onClick={() => handleBatchMove(cat.id)}
-                                                          className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 first:rounded-t-lg last:rounded-b-lg"
-                                                      >
-                                                          {cat.name}
-                                                      </button>
-                                                  ))}
-                                              </div>
-                                          </div>
-                                     </>
-                                 ) : (
-                                     <button 
-                                         onClick={() => startSorting(selectedCategory)}
-                                         className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-full transition-colors"
-                                         title="排序"
-                                     >
-                                         <GripVertical size={14} />
-                                         <span>排序</span>
-                                     </button>
-                                 )}
-                             </div>
-                         )
-                     )}
-                 </div>
-
-                 {displayedLinks.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                        {isCategoryLocked(selectedCategory) ? (
-                            <>
-                                <Lock size={40} className="text-amber-400 mb-4" />
-                                <p>该目录已锁定</p>
-                                <button onClick={() => setCatAuthModalData(categories.find(c => c.id === selectedCategory) || null)} className="mt-4 px-4 py-2 bg-amber-500 text-white rounded-lg">输入密码解锁</button>
-                            </>
-                        ) : (
-                            <>
-                                <Search size={40} className="opacity-30 mb-4" />
-                                <p>没有找到相关内容</p>
-                                {selectedCategory !== 'all' && (
-                                    <button onClick={() => setIsModalOpen(true)} className="mt-4 text-blue-500 hover:underline">添加一个?</button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                 ) : (
-                    isSortingMode === selectedCategory ? (
-                        <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCorners}
-                            onDragEnd={handleDragEnd}
-                        >
-                            <SortableContext
-                                items={displayedLinks.map(link => link.id)}
-                                strategy={rectSortingStrategy}
-                            >
-                                <div className={`grid gap-3 ${
-                                  siteSettings.cardStyle === 'detailed' 
-                                    ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                                    : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                                }`}>
-                                    {displayedLinks.map(link => (
-                                        <SortableLinkCard key={link.id} link={link} />
-                                    ))}
-                                </div>
-                            </SortableContext>
-                        </DndContext>
-                    ) : (
-                        <div className={`grid gap-3 ${
-                          siteSettings.cardStyle === 'detailed' 
-                            ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6' 
-                            : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8'
-                        }`}>
-                            {displayedLinks.map(link => renderLinkCard(link))}
-                        </div>
-                    )
-                 )}
-            </section>
-            )}
+          <LinkSections
+            linksCount={links.length}
+            pinnedLinks={pinnedLinks}
+            displayedLinks={displayedLinks}
+            selectedCategory={selectedCategory}
+            searchQuery={searchQuery}
+            categories={categories}
+            siteCardStyle={siteSettings.cardStyle}
+            isSortingPinned={isSortingPinned}
+            isSortingMode={isSortingMode}
+            isBatchEditMode={isBatchEditMode}
+            selectedLinksCount={selectedLinks.size}
+            sensors={sensors}
+            onPinnedDragEnd={handlePinnedDragEnd}
+            onDragEnd={handleDragEnd}
+            onSavePinnedSorting={savePinnedSorting}
+            onCancelPinnedSorting={cancelPinnedSorting}
+            onStartPinnedSorting={() => setIsSortingPinned(true)}
+            onSaveSorting={saveSorting}
+            onCancelSorting={cancelSorting}
+            onStartSorting={startSorting}
+            onToggleBatchEditMode={toggleBatchEditMode}
+            onBatchDelete={handleBatchDelete}
+            onSelectAll={handleSelectAll}
+            onBatchMove={handleBatchMove}
+            onAddLink={() => setIsModalOpen(true)}
+            renderLinkCard={renderLinkCard}
+            SortableLinkCard={SortableLinkCard}
+          />
         </div>
       </main>
 
-          <LinkModal
-            isOpen={isModalOpen}
-            onClose={() => { setIsModalOpen(false); setEditingLink(undefined); setPrefillLink(undefined); }}
-            onSave={editingLink ? handleEditLink : handleAddLink}
-            onDelete={editingLink ? handleDeleteLink : undefined}
-            categories={categories}
-            initialData={editingLink || (prefillLink as LinkItem)}
-            aiConfig={aiConfig}
-            defaultCategoryId={selectedCategory !== 'all' ? selectedCategory : undefined}
-          />
+      <LinkModal
+        isOpen={isModalOpen}
+        onClose={() => { setIsModalOpen(false); setEditingLink(undefined); setPrefillLink(undefined); }}
+        onSave={editingLink ? handleEditLink : handleAddLink}
+        onDelete={editingLink ? handleDeleteLink : undefined}
+        categories={categories}
+        initialData={editingLink || (prefillLink as LinkItem)}
+        aiConfig={aiConfig}
+        defaultCategoryId={selectedCategory !== 'all' ? selectedCategory : undefined}
+      />
 
-          {/* 右键菜单 */}
-          <ContextMenu
-            isOpen={contextMenu.isOpen}
-            position={contextMenu.position}
-            onClose={closeContextMenu}
-            onCopyLink={copyLinkToClipboard}
-            onShowQRCode={showQRCode}
-            onEditLink={editLinkFromContextMenu}
-            onDeleteLink={deleteLinkFromContextMenu}
-            onTogglePin={togglePinFromContextMenu}
-          />
+      {/* 右键菜单 */}
+      <ContextMenu
+        isOpen={contextMenu.isOpen}
+        position={contextMenu.position}
+        onClose={closeContextMenu}
+        onCopyLink={copyLinkToClipboard}
+        onShowQRCode={showQRCode}
+        onEditLink={editLinkFromContextMenu}
+        onDeleteLink={deleteLinkFromContextMenu}
+        onTogglePin={togglePinFromContextMenu}
+      />
 
-          {/* 二维码模态框 */}
-          <QRCodeModal
-            isOpen={qrCodeModal.isOpen}
-            url={qrCodeModal.url || ''}
-            title={qrCodeModal.title || ''}
-            onClose={() => setQrCodeModal({ isOpen: false, url: '', title: '' })}
-          />
-        </>
-      )}
+      {/* 二维码模态框 */}
+      <QRCodeModal
+        isOpen={qrCodeModal.isOpen}
+        url={qrCodeModal.url || ''}
+        title={qrCodeModal.title || ''}
+        onClose={() => setQrCodeModal({ isOpen: false, url: '', title: '' })}
+      />
     </div>
   );
 }

@@ -3,6 +3,8 @@ import { X, Sparkles, Loader2, Pin, Wand2, Trash2, Upload } from 'lucide-react';
 import { LinkItem, Category, AIConfig } from '../types';
 import { generateLinkDescription, suggestCategory } from '../services/geminiService';
 
+const FAVICON_CACHE_KEY = 'cloudnav_favicon_cache';
+
 interface LinkModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -85,33 +87,17 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
     onClose();
   };
 
-  // 缓存自定义图标到KV空间
-  const cacheCustomIcon = async (url: string, iconUrl: string) => {
+  const cacheCustomIcon = (url: string, iconUrl: string) => {
     try {
-      // 提取域名
       let domain = url;
       if (domain.startsWith('http://') || domain.startsWith('https://')) {
         const urlObj = new URL(domain);
         domain = urlObj.hostname;
       }
-      
-      // 将自定义图标保存到KV缓存
-      const authToken = localStorage.getItem('authToken');
-      if (authToken) {
-        await fetch('/api/storage', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-auth-password': authToken
-          },
-          body: JSON.stringify({
-            saveConfig: 'favicon',
-            domain: domain,
-            icon: iconUrl
-          })
-        });
-        console.log(`Custom icon cached for domain: ${domain}`);
-      }
+      const stored = localStorage.getItem(FAVICON_CACHE_KEY);
+      const cache = stored ? JSON.parse(stored) : {};
+      cache[domain] = iconUrl;
+      localStorage.setItem(FAVICON_CACHE_KEY, JSON.stringify(cache));
     } catch (error) {
       console.log("Failed to cache custom icon", error);
     }
@@ -139,7 +125,7 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
       pinned
     });
     
-    // 如果有自定义图标URL，缓存到KV空间
+    // 如果有自定义图标URL，缓存到本地
     if (icon && !icon.includes('faviconextractor.com')) {
       cacheCustomIcon(finalUrl, icon);
     }
@@ -205,16 +191,14 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
         domain = urlObj.hostname;
       }
 
-      // 先尝试从KV缓存获取图标
+      // 先尝试从本地缓存获取图标
       try {
-        const response = await fetch(`/api/storage?getConfig=favicon&domain=${encodeURIComponent(domain)}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.cached && data.icon) {
-            setIcon(data.icon);
-            setIsFetchingIcon(false);
-            return;
-          }
+        const stored = localStorage.getItem(FAVICON_CACHE_KEY);
+        const cache = stored ? JSON.parse(stored) : {};
+        if (cache[domain]) {
+          setIcon(cache[domain]);
+          setIsFetchingIcon(false);
+          return;
         }
       } catch (error) {
         console.log("Failed to fetch cached icon, will generate new one", error);
@@ -223,24 +207,12 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
       // 如果缓存中没有，则生成新图标
       const iconUrl = `https://www.faviconextractor.com/favicon/${domain}?larger=true`;
       setIcon(iconUrl);
-
-      // 将图标保存到KV缓存
+      // 将图标保存到本地缓存
       try {
-        const authToken = localStorage.getItem('authToken');
-        if (authToken) {
-          await fetch('/api/storage', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-auth-password': authToken
-            },
-            body: JSON.stringify({
-              saveConfig: 'favicon',
-              domain: domain,
-              icon: iconUrl
-            })
-          });
-        }
+        const stored = localStorage.getItem(FAVICON_CACHE_KEY);
+        const cache = stored ? JSON.parse(stored) : {};
+        cache[domain] = iconUrl;
+        localStorage.setItem(FAVICON_CACHE_KEY, JSON.stringify(cache));
       } catch (error) {
         console.log("Failed to cache icon", error);
       }
@@ -278,7 +250,7 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
       setIcon(base64String);
       setIsFetchingIcon(false);
 
-      // 如果有URL，缓存到KV
+      // 如果有URL，缓存到本地
       if (url) {
         let domain = url;
         if (!url.startsWith('http://') && !url.startsWith('https://')) {

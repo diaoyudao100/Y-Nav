@@ -14,7 +14,6 @@ export interface Category {
   id: string;
   name: string;
   icon: string; // Lucide icon name or emoji
-  password?: string; // Optional password for category protection
 }
 
 export interface SiteSettings {
@@ -22,7 +21,6 @@ export interface SiteSettings {
   navTitle: string;
   favicon: string;
   cardStyle: 'detailed' | 'simple';
-  passwordExpiryDays: number; // 密码过期天数，0表示永久不退出
 }
 
 export interface AppState {

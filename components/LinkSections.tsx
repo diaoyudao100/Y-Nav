@@ -105,8 +105,8 @@ const LinkSections: React.FC<LinkSectionsProps> = ({
             {/* Section Header with Stats Badge */}
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-200/50 dark:border-white/5">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-500/10">
-                  <Pin size={16} className="text-blue-500" />
+                <div className="p-2 rounded-lg bg-accent/10">
+                  <Pin size={16} className="text-accent" />
                 </div>
                 <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-700 to-slate-900 dark:from-slate-100 dark:to-slate-400">
                   置顶 / 常用
@@ -116,7 +116,7 @@ const LinkSections: React.FC<LinkSectionsProps> = ({
               <div className="flex items-center gap-3 text-xs text-slate-400 dark:text-slate-500">
                 <span className="px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800">{linksCount} 站点</span>
                 <span className="px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800">{categories.length} 分类</span>
-                <span className="px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">{pinnedLinks.length} 置顶</span>
+                <span className="px-2 py-1 rounded-full bg-accent/10 dark:bg-accent/20 text-accent">{pinnedLinks.length} 置顶</span>
               </div>
             </div>
 

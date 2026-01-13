@@ -139,7 +139,7 @@ const MainHeader: React.FC<MainHeaderProps> = ({
         </div>
       )}
 
-      <div className="flex items-center h-11 rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-900/50 shadow-sm hover:shadow-md transition-all duration-300 backdrop-blur-sm group-focus-within:ring-2 group-focus-within:ring-accent/20 group-focus-within:border-accent/50 group-focus-within:bg-white dark:group-focus-within:bg-slate-900">
+      <div className="flex items-center h-11 rounded-2xl border border-slate-200/80 dark:border-slate-700/50 bg-white/80 dark:bg-slate-900/50 shadow-sm hover:shadow-md transition-all duration-300 backdrop-blur-md group-focus-within:ring-2 group-focus-within:ring-accent/20 group-focus-within:border-accent/50 group-focus-within:bg-white dark:group-focus-within:bg-slate-900">
         <div className="flex items-center gap-1 pl-1.5 py-1">
           <button
             onClick={() => onSearchModeChange('internal')}

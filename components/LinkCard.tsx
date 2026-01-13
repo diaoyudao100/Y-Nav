@@ -28,7 +28,7 @@ const LinkCard: React.FC<LinkCardProps> = ({
         border bg-white dark:bg-slate-900/40 backdrop-blur-sm
         ${isBatchEditMode
             ? 'cursor-pointer border-slate-200 dark:border-white/10'
-            : 'hover:-translate-y-1 hover:shadow-xl hover:shadow-accent/10 cursor-pointer'
+            : 'hover:-translate-y-1 hover:shadow-xl hover:shadow-accent/10 shadow-sm shadow-slate-200/50 dark:shadow-none cursor-pointer'
         }
         ${isSelected
             ? 'border-rose-500 ring-2 ring-rose-500/20 bg-rose-50 dark:bg-rose-900/10'
@@ -67,7 +67,7 @@ const LinkCard: React.FC<LinkCardProps> = ({
     `;
 
     const descriptionClasses = `
-        leading-relaxed line-clamp-2 mt-2
+        leading-relaxed line-clamp-2 mt-1.5
         ${isDetailedView
             ? 'text-sm text-slate-500 dark:text-slate-400'
             : 'text-xs text-slate-500 dark:text-slate-400'

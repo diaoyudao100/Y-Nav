@@ -77,9 +77,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         <button
           onClick={onSelectAll}
           title="置顶网站"
-          className={`relative w-full rounded-xl transition-all mb-1 ${isSidebarCollapsed ? 'flex items-center justify-center p-2.5' : 'flex items-center gap-3 px-3 py-2.5'} ${selectedCategory === 'all'
-            ? 'bg-accent/10 text-accent'
-            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/60 dark:hover:bg-white/5'
+          className={`relative w-full rounded-xl transition-all duration-200 mb-1 ${isSidebarCollapsed ? 'flex items-center justify-center p-2.5' : 'flex items-center gap-3 px-3 py-2.5'} ${selectedCategory === 'all'
+            ? 'bg-gradient-to-r from-accent/15 to-transparent text-accent shadow-sm ring-1 ring-inset ring-accent/20'
+            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
         >
           {!isSidebarCollapsed && selectedCategory === 'all' && (
@@ -116,12 +116,12 @@ const Sidebar: React.FC<SidebarProps> = ({
                 key={cat.id}
                 onClick={() => onSelectCategory(cat)}
                 title={isSidebarCollapsed ? cat.name : undefined}
-                className={`relative w-full rounded-xl transition-all group ${isSidebarCollapsed
-                    ? 'flex items-center justify-center p-2.5'
-                    : 'flex items-center gap-3 px-3 py-2'
+                className={`relative w-full rounded-xl transition-all duration-200 group ${isSidebarCollapsed
+                  ? 'flex items-center justify-center p-2.5'
+                  : 'flex items-center gap-3 px-3 py-2'
                   } ${isSelected
-                    ? 'bg-slate-100/70 dark:bg-white/5 text-slate-900 dark:text-slate-100'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/60 dark:hover:bg-white/5'
+                    ? 'bg-gradient-to-r from-accent/15 to-transparent text-accent shadow-sm ring-1 ring-inset ring-accent/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
               >
                 {!isSidebarCollapsed && isSelected && (

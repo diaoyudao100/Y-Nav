@@ -29,7 +29,7 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
   const [batchMode, setBatchMode] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // 当模态框关闭时，重置批量模式为默认关闭状态
   useEffect(() => {
     if (!isOpen) {
@@ -37,7 +37,7 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
       setShowSuccessMessage(false);
     }
   }, [isOpen]);
-  
+
   // 成功提示1秒后自动消失
   useEffect(() => {
     if (showSuccessMessage) {
@@ -76,7 +76,7 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
       const timer = setTimeout(() => {
         handleFetchIcon();
       }, 500); // 延迟500ms执行，避免频繁请求
-      
+
       return () => clearTimeout(timer);
     }
   }, [url, autoFetchIcon, initialData]);
@@ -105,15 +105,15 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!title || !url) return;
-    
+
     // 确保URL有协议前缀
     let finalUrl = url;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       finalUrl = 'https://' + url;
     }
-    
+
     // 保存链接数据
     onSave({
       id: initialData?.id || '',
@@ -124,12 +124,12 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
       categoryId,
       pinned
     });
-    
+
     // 如果有自定义图标URL，缓存到本地
     if (icon && !icon.includes('faviconextractor.com')) {
       cacheCustomIcon(finalUrl, icon);
     }
-    
+
     // 批量模式下不关闭窗口，只显示成功提示
     if (batchMode) {
       setShowSuccessMessage(true);
@@ -151,26 +151,26 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
   const handleAIAssist = async () => {
     if (!url || !title) return;
     if (!aiConfig.apiKey) {
-        alert("请先点击侧边栏左下角设置图标配置 AI API Key");
-        return;
+      alert("请先点击侧边栏左下角设置图标配置 AI API Key");
+      return;
     }
 
     setIsGenerating(true);
-    
+
     // Parallel execution for speed
     try {
-        const descPromise = generateLinkDescription(title, url, aiConfig);
-        const catPromise = suggestCategory(title, url, categories, aiConfig);
-        
-        const [desc, cat] = await Promise.all([descPromise, catPromise]);
-        
-        if (desc) setDescription(desc);
-        if (cat) setCategoryId(cat);
-        
+      const descPromise = generateLinkDescription(title, url, aiConfig);
+      const catPromise = suggestCategory(title, url, categories, aiConfig);
+
+      const [desc, cat] = await Promise.all([descPromise, catPromise]);
+
+      if (desc) setDescription(desc);
+      if (cat) setCategoryId(cat);
+
     } catch (e) {
-        console.error("AI Assist failed", e);
+      console.error("AI Assist failed", e);
     } finally {
-        setIsGenerating(false);
+      setIsGenerating(false);
     }
   };
 
@@ -292,11 +292,10 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
             <button
               type="button"
               onClick={() => setPinned(!pinned)}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md border transition-all ${
-                pinned 
-                ? 'bg-blue-100 border-blue-200 text-blue-600 dark:bg-blue-900/40 dark:border-blue-800 dark:text-blue-300' 
-                : 'bg-slate-50 border-slate-200 text-slate-500 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-400'
-              }`}
+              className={`flex items-center gap-1 px-2 py-1 rounded-md border transition-all ${pinned
+                  ? 'bg-blue-100 border-blue-200 text-blue-600 dark:bg-blue-900/40 dark:border-blue-800 dark:text-blue-300'
+                  : 'bg-slate-50 border-slate-200 text-slate-500 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-400'
+                }`}
               title={pinned ? "取消置顶" : "置顶"}
             >
               <Pin size={14} className={pinned ? "fill-current" : ""} />
@@ -320,9 +319,8 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
               <button
                 type="button"
                 onClick={handleDelete}
-                className={`flex items-center gap-1 px-2 py-1 rounded-md border transition-all ${
-                  'bg-red-50 border-red-200 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-800/30 dark:text-red-400 dark:hover:bg-red-900/30'
-                }`}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md border transition-all ${'bg-red-50 border-red-200 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-800/30 dark:text-red-400 dark:hover:bg-red-900/30'
+                  }`}
                 title="删除链接"
               >
                 <Trash2 size={14} />
@@ -351,14 +349,14 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
           <div>
             <label className="block text-sm font-medium mb-1 dark:text-slate-300">URL 链接</label>
             <div className="flex gap-2">
-                <input
+              <input
                 type="text"
                 required
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                 placeholder="example.com 或 https://..."
-                />
+              />
             </div>
           </div>
 
@@ -444,18 +442,18 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
 
           <div>
             <div className="flex justify-between items-center mb-1">
-                <label className="block text-sm font-medium dark:text-slate-300">描述 (选填)</label>
-                {(title && url) && (
-                    <button
-                        type="button"
-                        onClick={handleAIAssist}
-                        disabled={isGenerating}
-                        className="text-xs flex items-center gap-1 text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
-                    >
-                        {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                        AI 自动填写
-                    </button>
-                )}
+              <label className="block text-sm font-medium dark:text-slate-300">描述 (选填)</label>
+              {(title && url) && (
+                <button
+                  type="button"
+                  onClick={handleAIAssist}
+                  disabled={isGenerating}
+                  className="text-xs flex items-center gap-1 text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition-colors"
+                >
+                  {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                  AI 自动填写
+                </button>
+              )}
             </div>
             <textarea
               value={description}
@@ -468,13 +466,13 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
           <div>
             <label className="block text-sm font-medium mb-1 dark:text-slate-300">分类</label>
             <select
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              className="w-full p-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             >
-            {categories.map(cat => (
+              {categories.map(cat => (
                 <option key={cat.id} value={cat.id}>{cat.name}</option>
-            ))}
+              ))}
             </select>
           </div>
 
@@ -487,7 +485,7 @@ const LinkModal: React.FC<LinkModalProps> = ({ isOpen, onClose, onSave, onDelete
             )}
             <button
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors shadow-lg shadow-blue-500/30"
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold py-2.5 px-4 rounded-xl transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 active:scale-[0.98]"
             >
               保存
             </button>

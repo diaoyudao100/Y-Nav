@@ -24,20 +24,22 @@ const LinkCard: React.FC<LinkCardProps> = ({
     const isDetailedView = siteCardStyle === 'detailed';
 
     const cardClasses = `
-        group relative transition-all duration-200 rounded-xl
-        ${isBatchEditMode ? 'cursor-pointer' : 'hover:-translate-y-0.5 hover:shadow-lg hover:shadow-accent/5'}
+        group relative transition-all duration-300 rounded-2xl
+        ${isBatchEditMode ? 'cursor-pointer' : 'hover:-translate-y-1 hover:shadow-xl hover:shadow-accent/10'}
         ${isSelected
-            ? 'bg-rose-500/10 border-rose-400/50 ring-1 ring-rose-400/30'
-            : 'bg-white/60 dark:bg-slate-900/40 border border-slate-200/50 dark:border-white/5 hover:border-accent/30 dark:hover:border-accent/30'
+            ? 'bg-rose-500/10 border-rose-400/50 ring-2 ring-rose-400/30'
+            : 'bg-white/70 dark:bg-slate-900/50 border border-slate-200/60 dark:border-white/5 hover:border-accent/40 dark:hover:border-accent/40 hover:bg-white/90 dark:hover:bg-slate-900/80'
         }
-        ${isDetailedView ? 'p-4' : 'p-3'}
+        backdrop-blur-md
+        ${isDetailedView ? 'p-5' : 'p-3.5'}
     `;
 
     const iconContainerClasses = `
-        flex items-center justify-center shrink-0 rounded-xl overflow-hidden
+        flex items-center justify-center shrink-0 rounded-xl overflow-hidden shadow-sm
+        transition-transform duration-300 group-hover:scale-105
         ${isDetailedView
-            ? 'w-10 h-10 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900'
-            : 'w-8 h-8 bg-slate-50 dark:bg-slate-800'
+            ? 'w-12 h-12 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border border-slate-100/50 dark:border-white/5'
+            : 'w-9 h-9 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-white/5'
         }
     `;
 

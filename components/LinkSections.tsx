@@ -73,9 +73,9 @@ const LinkSections: React.FC<LinkSectionsProps> = ({
           <div className="flex justify-center pt-12">
             <button
               onClick={onAddLink}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium text-slate-600 dark:text-slate-300 bg-white/70 dark:bg-slate-900/60 border border-slate-200/60 dark:border-white/10 hover:text-accent hover:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
+              className="group flex items-center gap-2 px-6 py-3 rounded-full text-sm font-semibold text-white bg-gradient-to-r from-accent to-emerald-500 hover:from-accent/90 hover:to-emerald-600 shadow-lg shadow-accent/20 hover:shadow-accent/30 active:scale-95 transition-all duration-300"
             >
-              <span className="text-base leading-none">+</span> 添加网址
+              <span className="text-lg leading-none group-hover:rotate-90 transition-transform duration-300">+</span> 添加网址
             </button>
           </div>
         )}
@@ -89,7 +89,7 @@ const LinkSections: React.FC<LinkSectionsProps> = ({
                 <div className="p-2 rounded-lg bg-blue-500/10">
                   <Pin size={16} className="text-blue-500" />
                 </div>
-                <h2 className="text-base font-semibold text-slate-700 dark:text-slate-200">
+                <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-700 to-slate-900 dark:from-slate-100 dark:to-slate-400">
                   置顶 / 常用
                 </h2>
               </div>

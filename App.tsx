@@ -364,7 +364,12 @@ function App() {
       <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-slate-50 dark:bg-slate-950">
         <div className="absolute inset-0 pointer-events-none">
           {/* Light Mode Background */}
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200 dark:hidden"></div>
+          <div className="absolute inset-0 bg-[#f8fafc] dark:hidden">
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+            <div className="absolute left-[-10%] top-[-10%] w-[500px] h-[500px] rounded-full bg-blue-400/10 blur-[100px] mix-blend-multiply"></div>
+            <div className="absolute right-[-10%] bottom-[-10%] w-[500px] h-[500px] rounded-full bg-emerald-400/10 blur-[100px] mix-blend-multiply"></div>
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-slate-50/80"></div>
+          </div>
 
           {/* Dark Mode Atmosphere */}
           <div className="absolute inset-0 hidden dark:block bg-[#05070f]"></div>

@@ -27,22 +27,26 @@
 <details>
 <summary>📖 手动部署步骤</summary>
 
-1. **Fork 本仓库**到你的 GitHub 账号，克隆到本地
+1. **Fork 本仓库**到你的 GitHub 账号
 
-2. **安装依赖并登录 Cloudflare**
+2. **创建 KV 命名空间** (Workers 专用，与 Pages 区分)
+   ```bash
+   # 登录 Cloudflare
+   npx wrangler login
+   
+   # 创建 Workers 专用 KV
+   npm run kv:create
+   ```
+   记下返回的 `id`，填入 `wrangler.toml` 的 `kv_namespaces.id` 字段。
+
+3. **配置 GitHub Secrets**（用于 CI/CD 自动部署）
+   - `CLOUDFLARE_API_TOKEN`：[创建 API Token](https://dash.cloudflare.com/profile/api-tokens)，需要 `Workers` 编辑权限
+   - `CLOUDFLARE_ACCOUNT_ID`：在 Cloudflare Dashboard 右侧可找到
+   - `SYNC_PASSWORD`：(可选) 同步密码
+
+4. **推送代码触发部署**，或手动运行：
    ```bash
    npm install
-   npx wrangler login
-   ```
-
-3. **创建 KV 命名空间** (如果需要新的 KV)
-   ```bash
-   npx wrangler kv:namespace create YNAV_WORKER_KV
-   ```
-   将返回的 `id` 填入 `wrangler.toml` 的 `kv_namespaces.id` 字段。
-
-4. **部署到 Workers**
-   ```bash
    npm run deploy:workers
    ```
 
@@ -50,10 +54,6 @@
    - 进入 Cloudflare Dashboard -> Workers & Pages -> 你的 Worker -> Settings -> Triggers
    - 添加 Custom Domain，例如 `nav.yourdomain.com`
    - 在域名 DNS 处将该域名 CNAME 到 Cloudflare 优选 IP
-
-6. **(可选) 设置同步密码**
-   - Workers & Pages -> 你的 Worker -> Settings -> Variables
-   - 添加 `SYNC_PASSWORD` 变量
 
 </details>
 
@@ -120,8 +120,11 @@ Y-Nav/
 ├── src/                    # React 前端源码
 ├── functions/              # Cloudflare Pages Functions (API)
 │   └── api/sync.ts
-├── worker/                 # Cloudflare Workers 入口 (手动部署用)
+├── worker/                 # Cloudflare Workers 入口
 │   └── index.ts
+├── .github/workflows/      # CI/CD 自动部署
+│   ├── deploy-workers.yml
+│   └── deploy-pages.yml
 ├── wrangler.toml           # Workers 部署配置
 └── package.json
 ```
